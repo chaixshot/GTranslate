@@ -75,7 +75,7 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
     /// <exception cref="TranslatorException">
     /// Thrown when <paramref name="toLanguage"/> or <paramref name="fromLanguage"/> are not supported, or an error occurred during the operation.
     /// </exception>
-    public async Task<BingTranslationResult> TranslateAsync(string text, string toLanguage, string? fromLanguage = null)
+    public async Task<BingTranslationResult> TranslateAsync(string text, string toLanguage, string? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -85,11 +85,11 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
         TranslatorGuards.LanguageSupported(this, toLang, fromLang);
         TranslatorGuards.MaxTextLength(text, MaxTextLength);
 
-        return await TranslateAsync(text, toLang, fromLang).ConfigureAwait(false);
+        return await TranslateAsync(text, toLang, fromLang, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc cref="TranslateAsync(string, string, string)"/>
-    public async Task<BingTranslationResult> TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null)
+    /// <inheritdoc cref="TranslateAsync(string, string, string, CancellationToken)"/>
+    public async Task<BingTranslationResult> TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -97,7 +97,7 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
         TranslatorGuards.LanguageSupported(this, toLanguage, fromLanguage);
         TranslatorGuards.MaxTextLength(text, MaxTextLength);
 
-        var credentials = await GetOrUpdateCredentialsAsync().ConfigureAwait(false);
+        var credentials = await GetOrUpdateCredentialsAsync(cancellationToken).ConfigureAwait(false);
 
         var data = new Dictionary<string, string>
         {
@@ -112,12 +112,12 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
 
         // For some reason the "isVertical" parameter allows you to translate up to 1000 characters instead of 500
         var uri = new Uri($"{HostUrl}/ttranslatev3?isVertical=1&IG={credentials.ImpressionGuid.ToString("N").ToUpperInvariant()}&IID={Iid}");
-        using var response = await _httpClient.PostAsync(uri, content).ConfigureAwait(false);
+        using var response = await _httpClient.PostAsync(uri, content, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
         // Bing Translator always return status code 200 regardless of the content
-        using var document = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         ThrowIfStatusCodeIsPresent(document);
 
@@ -198,6 +198,7 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
     /// <param name="text">The text to transliterate.</param>
     /// <param name="toLanguage">The target language.</param>
     /// <param name="fromLanguage">The source language.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous transliteration operation. The task contains the transliteration result.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> or <paramref name="toLanguage"/> are null.</exception>
@@ -205,7 +206,7 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
     /// <exception cref="TranslatorException">
     /// Thrown when <paramref name="toLanguage"/> or <paramref name="fromLanguage"/> are not supported, or an error occurred during the operation.
     /// </exception>
-    public async Task<BingTransliterationResult> TransliterateAsync(string text, string toLanguage, string? fromLanguage = null)
+    public async Task<BingTransliterationResult> TransliterateAsync(string text, string toLanguage, string? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -215,11 +216,11 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
         TranslatorGuards.LanguageSupported(this, toLang, fromLang);
         TranslatorGuards.MaxTextLength(text, MaxTextLength);
 
-        return await TransliterateAsync(text, toLang, fromLang).ConfigureAwait(false);
+        return await TransliterateAsync(text, toLang, fromLang, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc cref="TransliterateAsync(string, string, string)"/>
-    public async Task<BingTransliterationResult> TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null)
+    /// <inheritdoc cref="TransliterateAsync(string, string, string, CancellationToken)"/>
+    public async Task<BingTransliterationResult> TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -227,7 +228,7 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
         TranslatorGuards.LanguageSupported(this, toLanguage, fromLanguage);
         TranslatorGuards.MaxTextLength(text, MaxTextLength);
 
-        var result = await TranslateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+        var result = await TranslateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
         if (!result.HasTransliteration)
         {
             throw new TranslatorException("Failed to get the transliteration.", Name);
@@ -240,16 +241,17 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
     /// Detects the language of a text using Bing Translator.
     /// </summary>
     /// <param name="text">The text to detect its language.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous language detection operation. The task contains the detected language.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> is null.</exception>
     /// <exception cref="TranslatorException">Thrown when an error occurred during the operation.</exception>
-    public async Task<Language> DetectLanguageAsync(string text)
+    public async Task<Language> DetectLanguageAsync(string text, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(text);
         TranslatorGuards.MaxTextLength(text, MaxTextLength);
 
-        var result = await TranslateAsync(text, "en").ConfigureAwait(false);
+        var result = await TranslateAsync(text, "en", cancellationToken: cancellationToken).ConfigureAwait(false);
         return result.SourceLanguage ?? throw new TranslatorException("Unable to detect the language of text.");
     }
 
@@ -258,20 +260,39 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
     /// </summary>
     /// <param name="text">The text to convert.</param>
     /// <param name="language">The language of the voice. Only the languages in <see cref="MicrosoftTranslator.DefaultVoices"/> are supported.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
+    /// <returns>A task that represents the asynchronous synthesis operation. The task contains the synthesized speech in a MP3 <see cref="Stream"/>.</returns>
+    public async Task<Stream> TextToSpeechAsync(string text, string language, CancellationToken cancellationToken)
+    {
+        return await TextToSpeechAsync(text, language, 1f, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc cref="TextToSpeechAsync(string, MicrosoftVoice, CancellationToken)"/>
+    public async Task<Stream> TextToSpeechAsync(string text, MicrosoftVoice voice, CancellationToken cancellationToken)
+    {
+        return await TextToSpeechAsync(text, voice, 1f, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Converts text into synthesized speech.
+    /// </summary>
+    /// <param name="text">The text to convert.</param>
+    /// <param name="language">The language of the voice. Only the languages in <see cref="MicrosoftTranslator.DefaultVoices"/> are supported.</param>
     /// <param name="speakRate">The speaking rate of the text, expressed as a number that acts as a multiplier of the default.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous synthesis operation. The task contains the synthesized speech in a MP3 <see cref="Stream"/>.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> or <paramref name="language"/> are null.</exception>
     /// <exception cref="ArgumentException">Thrown when a <see cref="MicrosoftVoice"/> could not be obtained from <paramref name="language"/>.</exception>
     /// <exception cref="TranslatorException">Thrown when <paramref name="language"/> is not supported, or an error occurred during the operation.</exception>
-    public async Task<Stream> TextToSpeechAsync(string text, string language, float speakRate = 1)
+    public async Task<Stream> TextToSpeechAsync(string text, string language, float speakRate = 1, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(language);
         EnsureValidTextToSpeechLanguage(language, out var voice);
 
-        return await TextToSpeechAsync(text, voice, speakRate).ConfigureAwait(false);
+        return await TextToSpeechAsync(text, voice, speakRate, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -281,17 +302,18 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
     /// <param name="text">The text to convert.</param>
     /// <param name="voice">The voice.</param>
     /// <param name="speakRate">The speaking rate of the text, expressed as a number that acts as a multiplier of the default.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous synthesis operation. The task contains the synthesized speech in a MP3 <see cref="Stream"/>.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> or <paramref name="voice"/> are null.</exception>
     /// <exception cref="TranslatorException">Thrown when an error occurred during the operation.</exception>
-    public async Task<Stream> TextToSpeechAsync(string text, MicrosoftVoice voice, float speakRate = 1)
+    public async Task<Stream> TextToSpeechAsync(string text, MicrosoftVoice voice, float speakRate = 1, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(voice);
 
-        var credentials = await GetOrUpdateCredentialsAsync().ConfigureAwait(false);
+        var credentials = await GetOrUpdateCredentialsAsync(cancellationToken).ConfigureAwait(false);
 
         string ssml = $"<speak version='1.0' xml:lang='{voice.Locale}'><voice xml:lang='{voice.Locale}' xml:gender='{voice.Gender}' name='{voice.ShortName}'><prosody rate='{speakRate}'>{MicrosoftTranslator.SsmlEncoder.Encode(text)}</prosody></voice></speak>";
 
@@ -308,7 +330,7 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Post, uri);
         request.Content = content;
 
-        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
         return await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
@@ -337,13 +359,13 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
     /// <inheritdoc/>
     public void Dispose() => Dispose(true);
 
-    /// <inheritdoc cref="TranslateAsync(string, string, string)"/>
-    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, string toLanguage, string? fromLanguage)
-        => await TranslateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TranslateAsync(string, string, string, CancellationToken)"/>
+    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, string toLanguage, string? fromLanguage, CancellationToken cancellationToken)
+        => await TranslateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="TranslateAsync(string, ILanguage, ILanguage)"/>
-    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage)
-        => await TranslateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TranslateAsync(string, ILanguage, ILanguage, CancellationToken)"/>
+    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage, CancellationToken cancellationToken)
+        => await TranslateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
     async Task<IDictionaryResult> IDictionaryTranslator.LookupDictionaryAsync(string text, string toLanguage, string fromLanguage, CancellationToken cancellationToken)
         => await LookupDictionaryAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
@@ -351,16 +373,16 @@ public sealed class BingTranslator : IDictionaryTranslator, IDisposable
     async Task<IDictionaryResult> IDictionaryTranslator.LookupDictionaryAsync(string text, ILanguage toLanguage, ILanguage fromLanguage, CancellationToken cancellationToken)
         => await LookupDictionaryAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="TransliterateAsync(string, string, string)"/>
-    async Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, string toLanguage, string? fromLanguage)
-        => await TransliterateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TransliterateAsync(string, string, string, CancellationToken)"/>
+    async Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, string toLanguage, string? fromLanguage, CancellationToken cancellationToken)
+        => await TransliterateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="TransliterateAsync(string, ILanguage, ILanguage)"/>
-    async Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage)
-        => await TransliterateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TransliterateAsync(string, ILanguage, ILanguage, CancellationToken)"/>
+    async Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage, CancellationToken cancellationToken)
+        => await TransliterateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="DetectLanguageAsync(string)"/>
-    async Task<ILanguage> ITranslator.DetectLanguageAsync(string text) => await DetectLanguageAsync(text).ConfigureAwait(false);
+    /// <inheritdoc cref="DetectLanguageAsync(string, CancellationToken)"/>
+    async Task<ILanguage> ITranslator.DetectLanguageAsync(string text, CancellationToken cancellationToken) => await DetectLanguageAsync(text, cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc cref="IsLanguageSupported(Language)"/>
     bool ITranslator.IsLanguageSupported(ILanguage language) => language is Language lang && IsLanguageSupported(lang);

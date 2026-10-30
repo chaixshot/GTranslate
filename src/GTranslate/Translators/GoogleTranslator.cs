@@ -83,7 +83,7 @@ public sealed class GoogleTranslator : IDictionaryTranslator, IDisposable
     /// <exception cref="TranslatorException">
     /// Thrown when <paramref name="toLanguage"/> or <paramref name="fromLanguage"/> are not supported, or an error occurred during the operation.
     /// </exception>
-    public async Task<GoogleTranslationResult> TranslateAsync(string text, string toLanguage, string? fromLanguage = null)
+    public async Task<GoogleTranslationResult> TranslateAsync(string text, string toLanguage, string? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -92,11 +92,11 @@ public sealed class GoogleTranslator : IDictionaryTranslator, IDisposable
         TranslatorGuards.LanguageFound(fromLanguage, out var fromLang, "Unknown source language.");
         TranslatorGuards.LanguageSupported(this, toLang, fromLang);
 
-        return await TranslateAsync(text, toLang, fromLang).ConfigureAwait(false);
+        return await TranslateAsync(text, toLang, fromLang, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc cref="TranslateAsync(string, string, string)"/>
-    public async Task<GoogleTranslationResult> TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null)
+    /// <inheritdoc cref="TranslateAsync(string, string, string, CancellationToken)"/>
+    public async Task<GoogleTranslationResult> TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -105,10 +105,10 @@ public sealed class GoogleTranslator : IDictionaryTranslator, IDisposable
 
         string url = $"{ApiEndpoint}?client=gtx&sl={GoogleHotPatch(fromLanguage?.ISO6391 ?? "auto")}&tl={GoogleHotPatch(toLanguage.ISO6391)}&dt=t&dt=bd&dj=1&source=input&tk={MakeToken(text)}";
         using var content = new FormUrlEncodedContent([new KeyValuePair<string, string>("q", text)]);
-        using var response = await _httpClient.PostAsync(new Uri(url), content).ConfigureAwait(false);
+        using var response = await _httpClient.PostAsync(new Uri(url), content, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
-        var result = (await response.Content.ReadFromJsonAsync(GoogleTranslationResultModelContext.Default.GoogleTranslationResultModel).ConfigureAwait(false))!;
+        var result = (await response.Content.ReadFromJsonAsync(GoogleTranslationResultModelContext.Default.GoogleTranslationResultModel, cancellationToken).ConfigureAwait(false))!;
         string translation = result.Sentences is null ? string.Empty : string.Concat(result.Sentences.Select(x => x.Translation));
         string? transliteration = result.Sentences is null ? null : string.Concat(result.Sentences.Select(x => x.Transliteration));
 
@@ -164,6 +164,7 @@ public sealed class GoogleTranslator : IDictionaryTranslator, IDisposable
     /// <param name="text">The text to transliterate.</param>
     /// <param name="toLanguage">The target language.</param>
     /// <param name="fromLanguage">The source language.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous transliteration operation. The task contains the transliteration result.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> or <paramref name="toLanguage"/> are null.</exception>
@@ -171,7 +172,7 @@ public sealed class GoogleTranslator : IDictionaryTranslator, IDisposable
     /// <exception cref="TranslatorException">
     /// Thrown when <paramref name="toLanguage"/> or <paramref name="fromLanguage"/> are not supported, or an error occurred during the operation.
     /// </exception>
-    public async Task<GoogleTransliterationResult> TransliterateAsync(string text, string toLanguage, string? fromLanguage = null)
+    public async Task<GoogleTransliterationResult> TransliterateAsync(string text, string toLanguage, string? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -180,18 +181,18 @@ public sealed class GoogleTranslator : IDictionaryTranslator, IDisposable
         TranslatorGuards.LanguageFound(fromLanguage, out var fromLang, "Unknown source language.");
         TranslatorGuards.LanguageSupported(this, toLang, fromLang);
 
-        return await TransliterateAsync(text, toLang, fromLang).ConfigureAwait(false);
+        return await TransliterateAsync(text, toLang, fromLang, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc cref="TransliterateAsync(string, string, string)"/>
-    public async Task<GoogleTransliterationResult> TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null)
+    /// <inheritdoc cref="TransliterateAsync(string, string, string, CancellationToken)"/>
+    public async Task<GoogleTransliterationResult> TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(toLanguage);
         TranslatorGuards.LanguageSupported(this, toLanguage, fromLanguage);
 
-        var result = await TranslateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+        var result = await TranslateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
         if (result.Transliteration is null)
         {
             throw new TranslatorException("Failed to get the transliteration.", Name);
@@ -204,15 +205,16 @@ public sealed class GoogleTranslator : IDictionaryTranslator, IDisposable
     /// Detects the language of a text using Google Translate.
     /// </summary>
     /// <param name="text">The text to detect its language.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous language detection operation. The task contains the detected language.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> is null.</exception>
     /// <exception cref="TranslatorException">Thrown when an error occurred during the operation.</exception>
-    public async Task<Language> DetectLanguageAsync(string text)
+    public async Task<Language> DetectLanguageAsync(string text, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(text);
 
-        var result = await TranslateAsync(text, "en").ConfigureAwait(false);
+        var result = await TranslateAsync(text, "en", cancellationToken: cancellationToken).ConfigureAwait(false);
         return result.SourceLanguage;
     }
 
@@ -221,24 +223,43 @@ public sealed class GoogleTranslator : IDictionaryTranslator, IDisposable
     /// </summary>
     /// <param name="text">The text to convert.</param>
     /// <param name="language">The voice language. Only the languages in <see cref="TextToSpeechLanguages"/> are supported.</param>
-    /// /// <param name="speed">The rate (speed) of synthesized speech. Google uses <c>1</c> for normal speed and <c>0.3</c> for slow speed.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
+    /// <returns>A task that represents the asynchronous synthesis operation. The task contains the synthesized speech in a MP3 <see cref="Stream"/>.</returns>
+    public async Task<Stream> TextToSpeechAsync(string text, string language, CancellationToken cancellationToken)
+    {
+        return await TextToSpeechAsync(text, language, 1f, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc cref="TextToSpeechAsync(string, string, CancellationToken)"/>
+    public async Task<Stream> TextToSpeechAsync(string text, ILanguage language, CancellationToken cancellationToken)
+    {
+        return await TextToSpeechAsync(text, language, 1f, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Converts text into synthesized speech.
+    /// </summary>
+    /// <param name="text">The text to convert.</param>
+    /// <param name="language">The voice language. Only the languages in <see cref="TextToSpeechLanguages"/> are supported.</param>
+    /// <param name="speed">The rate (speed) of synthesized speech. Google uses <c>1</c> for normal speed and <c>0.3</c> for slow speed.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous synthesis operation. The task contains the synthesized speech in a MP3 <see cref="Stream"/>.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> or <paramref name="language"/> are null.</exception>
     /// <exception cref="ArgumentException">Thrown when a <see cref="Language"/> could not be obtained from <paramref name="language"/>.</exception>
     /// <exception cref="TranslatorException">Thrown when <paramref name="language"/> is not supported, or an error occurred during the operation.</exception>
-    public async Task<Stream> TextToSpeechAsync(string text, string language, float speed = 1)
+    public async Task<Stream> TextToSpeechAsync(string text, string language, float speed = 1, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(language);
         TranslatorGuards.LanguageFound(language, out var lang);
 
-        return await TextToSpeechAsync(text, lang, speed).ConfigureAwait(false);
+        return await TextToSpeechAsync(text, lang, speed, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc cref="TextToSpeechAsync(string, string, float)"/>
-    public async Task<Stream> TextToSpeechAsync(string text, ILanguage language, float speed = 1)
+    /// <inheritdoc cref="TextToSpeechAsync(string, string, float, CancellationToken)"/>
+    public async Task<Stream> TextToSpeechAsync(string text, ILanguage language, float speed = 1, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -249,7 +270,7 @@ public sealed class GoogleTranslator : IDictionaryTranslator, IDisposable
         var tasks = new Task<ReadOnlyMemory<byte>>[textParts.Length];
         for (int i = 0; i < textParts.Length; i++)
         {
-            tasks[i] = ProcessRequestAsync(textParts[i], i, textParts.Length);
+            tasks[i] = ProcessRequestAsync(textParts[i], i, textParts.Length, cancellationToken);
         }
 
         // Send requests and parse responses in parallel
@@ -257,13 +278,16 @@ public sealed class GoogleTranslator : IDictionaryTranslator, IDisposable
 
         return chunks.AsReadOnlySequence().AsStream();
 
-        async Task<ReadOnlyMemory<byte>> ProcessRequestAsync(ReadOnlyMemory<char> textChunk, int index, int total)
+        async Task<ReadOnlyMemory<byte>> ProcessRequestAsync(ReadOnlyMemory<char> textChunk, int index, int total, CancellationToken ct)
         {
             string escapedText = Uri.EscapeDataString(textChunk.ToString());
             string token = MakeToken(textChunk.Span);
 
             var uri = new Uri($"{TtsApiEndpoint}?ie=UTF-8&q={escapedText}&tl={language.ISO6391}&ttsspeed={speed}&total={total}&idx={index}&client=tw-ob&textlen={textChunk.Length}&tk={token}");
-            return await _httpClient.GetByteArrayAsync(uri).ConfigureAwait(false);
+            using var response = await _httpClient.GetAsync(uri, ct).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            byte[] bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            return bytes;
         }
     }
 
@@ -290,13 +314,13 @@ public sealed class GoogleTranslator : IDictionaryTranslator, IDisposable
     /// <inheritdoc/>
     public void Dispose() => Dispose(true);
 
-    /// <inheritdoc cref="TranslateAsync(string, string, string)"/>
-    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, string toLanguage, string? fromLanguage)
-        => await TranslateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TranslateAsync(string, string, string, CancellationToken)"/>
+    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, string toLanguage, string? fromLanguage, CancellationToken cancellationToken)
+        => await TranslateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="TranslateAsync(string, ILanguage, ILanguage)"/>
-    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage)
-        => await TranslateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TranslateAsync(string, ILanguage, ILanguage, CancellationToken)"/>
+    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage, CancellationToken cancellationToken)
+        => await TranslateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
     async Task<IDictionaryResult> IDictionaryTranslator.LookupDictionaryAsync(string text, string toLanguage, string fromLanguage, CancellationToken cancellationToken)
         => await LookupDictionaryAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
@@ -304,16 +328,16 @@ public sealed class GoogleTranslator : IDictionaryTranslator, IDisposable
     async Task<IDictionaryResult> IDictionaryTranslator.LookupDictionaryAsync(string text, ILanguage toLanguage, ILanguage fromLanguage, CancellationToken cancellationToken)
         => await LookupDictionaryAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="TransliterateAsync(string, string, string)"/>
-    async Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, string toLanguage, string? fromLanguage)
-        => await TransliterateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TransliterateAsync(string, string, string, CancellationToken)"/>
+    async Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, string toLanguage, string? fromLanguage, CancellationToken cancellationToken)
+        => await TransliterateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="TransliterateAsync(string, ILanguage, ILanguage)"/>
-    async Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage)
-        => await TransliterateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TransliterateAsync(string, ILanguage, ILanguage, CancellationToken)"/>
+    async Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage, CancellationToken cancellationToken)
+        => await TransliterateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="DetectLanguageAsync(string)"/>
-    async Task<ILanguage> ITranslator.DetectLanguageAsync(string text) => await DetectLanguageAsync(text).ConfigureAwait(false);
+    /// <inheritdoc cref="DetectLanguageAsync(string, CancellationToken)"/>
+    async Task<ILanguage> ITranslator.DetectLanguageAsync(string text, CancellationToken cancellationToken) => await DetectLanguageAsync(text, cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc cref="IsLanguageSupported(Language)"/>
     bool ITranslator.IsLanguageSupported(ILanguage language) => language is Language lang && IsLanguageSupported(lang);

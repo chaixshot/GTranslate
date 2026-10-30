@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using GTranslate.Extensions;
 using GTranslate.Results;
@@ -82,7 +83,7 @@ public sealed class AggregateTranslator : ITranslator, IDisposable
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> or <paramref name="toLanguage"/> are null.</exception>
     /// <exception cref="TranslatorException">Thrown when no translator supports <paramref name="toLanguage"/> or <paramref name="fromLanguage"/>.</exception>
     /// <exception cref="AggregateException">Thrown when all translators fail to provide a valid result.</exception>
-    public async Task<ITranslationResult> TranslateAsync(string text, string toLanguage, string? fromLanguage = null)
+    public async Task<ITranslationResult> TranslateAsync(string text, string toLanguage, string? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -99,7 +100,7 @@ public sealed class AggregateTranslator : ITranslator, IDisposable
 
             try
             {
-                var result = await translator.TranslateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+                var result = await translator.TranslateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
                 return new AggregateTranslationResult(result, exceptions?.AsReadOnly() ?? ReadOnlyDictionary<string, Exception>.Empty);
             }
             catch (Exception e)
@@ -117,8 +118,8 @@ public sealed class AggregateTranslator : ITranslator, IDisposable
         throw new AggregateException("No translator provided a valid result.", exceptions.Values);
     }
 
-    /// <inheritdoc cref="TranslateAsync(string, string, string)"/>
-    public async Task<ITranslationResult> TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null)
+    /// <inheritdoc cref="TranslateAsync(string, string, string, CancellationToken)"/>
+    public async Task<ITranslationResult> TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -135,7 +136,7 @@ public sealed class AggregateTranslator : ITranslator, IDisposable
 
             try
             {
-                var result = await translator.TranslateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+                var result = await translator.TranslateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
                 return new AggregateTranslationResult(result, exceptions?.AsReadOnly() ?? ReadOnlyDictionary<string, Exception>.Empty);
             }
             catch (Exception e)
@@ -159,6 +160,7 @@ public sealed class AggregateTranslator : ITranslator, IDisposable
     /// <param name="text">The text.</param>
     /// <param name="toLanguage">The target language.</param>
     /// <param name="fromLanguage">The source language.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task containing the transliteration result.</returns>
     /// <remarks>This method will attempt to use all the translation services passed in the constructor, in the order they were provided.</remarks>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
@@ -166,7 +168,7 @@ public sealed class AggregateTranslator : ITranslator, IDisposable
     /// <exception cref="ArgumentException">Thrown when a <see cref="Language"/> could not be obtained from <paramref name="toLanguage"/> or <paramref name="fromLanguage"/>.</exception>
     /// <exception cref="TranslatorException">Thrown when no translator supports <paramref name="toLanguage"/> or <paramref name="fromLanguage"/>.</exception>
     /// <exception cref="AggregateException">Thrown when all translators fail to provide a valid result.</exception>
-    public async Task<ITransliterationResult> TransliterateAsync(string text, string toLanguage, string? fromLanguage = null)
+    public async Task<ITransliterationResult> TransliterateAsync(string text, string toLanguage, string? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -174,11 +176,11 @@ public sealed class AggregateTranslator : ITranslator, IDisposable
         TranslatorGuards.LanguageFound(toLanguage, out var toLang, "Unknown target language.");
         TranslatorGuards.LanguageFound(fromLanguage, out var fromLang, "Unknown source language.");
 
-        return await TransliterateAsync(text, toLang, fromLang).ConfigureAwait(false);
+        return await TransliterateAsync(text, toLang, fromLang, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc cref="TransliterateAsync(string, string, string)"/>
-    public async Task<ITransliterationResult> TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null)
+    /// <inheritdoc cref="TransliterateAsync(string, string, string, CancellationToken)"/>
+    public async Task<ITransliterationResult> TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -195,7 +197,7 @@ public sealed class AggregateTranslator : ITranslator, IDisposable
 
             try
             {
-                var result = await translator.TransliterateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+                var result = await translator.TransliterateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
                 return new AggregateTransliterationResult(result, exceptions?.AsReadOnly() ?? ReadOnlyDictionary<string, Exception>.Empty);
             }
             catch (Exception e)
@@ -217,12 +219,13 @@ public sealed class AggregateTranslator : ITranslator, IDisposable
     /// Detects the language of a text using the available translation services.
     /// </summary>
     /// <param name="text">The text to detect its language.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous language detection operation. The task contains the detected language.</returns>
     /// <remarks>This method will attempt to use all the translation services passed in the constructor, in the order they were provided.</remarks>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> is null.</exception>
     /// <exception cref="AggregateException">Thrown when all translators fail to provide a valid result.</exception>
-    public async Task<ILanguage> DetectLanguageAsync(string text)
+    public async Task<ILanguage> DetectLanguageAsync(string text, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -232,7 +235,7 @@ public sealed class AggregateTranslator : ITranslator, IDisposable
         {
             try
             {
-                return await translator.DetectLanguageAsync(text).ConfigureAwait(false);
+                return await translator.DetectLanguageAsync(text, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception e)
             {

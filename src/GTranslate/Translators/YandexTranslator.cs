@@ -5,6 +5,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using GTranslate.Common;
 using GTranslate.Models;
@@ -80,7 +81,7 @@ public sealed class YandexTranslator : ITranslator, IDisposable
     /// <exception cref="TranslatorException">
     /// Thrown when <paramref name="toLanguage"/> or <paramref name="fromLanguage"/> are not supported, or an error occurred during the operation.
     /// </exception>
-    public async Task<YandexTranslationResult> TranslateAsync(string text, string toLanguage, string? fromLanguage = null)
+    public async Task<YandexTranslationResult> TranslateAsync(string text, string toLanguage, string? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -89,11 +90,11 @@ public sealed class YandexTranslator : ITranslator, IDisposable
         TranslatorGuards.LanguageFound(fromLanguage, out var fromLang, "Unknown source language.");
         TranslatorGuards.LanguageSupported(this, toLang, fromLang);
 
-        return await TranslateAsync(text, toLang, fromLang).ConfigureAwait(false);
+        return await TranslateAsync(text, toLang, fromLang, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc cref="TranslateAsync(string, string, string)"/>
-    public async Task<YandexTranslationResult> TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null)
+    /// <inheritdoc cref="TranslateAsync(string, string, string, CancellationToken)"/>
+    public async Task<YandexTranslationResult> TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -109,9 +110,9 @@ public sealed class YandexTranslator : ITranslator, IDisposable
         };
 
         using var content = new FormUrlEncodedContent(data);
-        using var response = await _httpClient.PostAsync(new Uri($"{ApiUrl}/translate{query}"), content).ConfigureAwait(false);
+        using var response = await _httpClient.PostAsync(new Uri($"{ApiUrl}/translate{query}"), content, cancellationToken).ConfigureAwait(false);
 
-        var result = (await response.Content.ReadFromJsonAsync(YandexTranslationResultModelContext.Default.YandexTranslationResultModel).ConfigureAwait(false))!;
+        var result = (await response.Content.ReadFromJsonAsync(YandexTranslationResultModelContext.Default.YandexTranslationResultModel, cancellationToken).ConfigureAwait(false))!;
 
         if (!result.IsSuccessful)
         {
@@ -136,6 +137,7 @@ public sealed class YandexTranslator : ITranslator, IDisposable
     /// <param name="text">The text to transliterate.</param>
     /// <param name="toLanguage">The target language.</param>
     /// <param name="fromLanguage">The source language.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous transliteration operation. The task contains the transliteration result.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> or <paramref name="toLanguage"/> are null.</exception>
@@ -143,7 +145,7 @@ public sealed class YandexTranslator : ITranslator, IDisposable
     /// <exception cref="TranslatorException">
     /// Thrown when <paramref name="toLanguage"/> or <paramref name="fromLanguage"/> are not supported, or an error occurred during the operation.
     /// </exception>
-    public async Task<YandexTransliterationResult> TransliterateAsync(string text, string toLanguage, string? fromLanguage = null)
+    public async Task<YandexTransliterationResult> TransliterateAsync(string text, string toLanguage, string? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -152,11 +154,11 @@ public sealed class YandexTranslator : ITranslator, IDisposable
         TranslatorGuards.LanguageFound(fromLanguage, out var fromLang, "Unknown source language.");
         TranslatorGuards.LanguageSupported(this, toLang, fromLang);
 
-        return await TransliterateAsync(text, toLang, fromLang).ConfigureAwait(false);
+        return await TransliterateAsync(text, toLang, fromLang, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc cref="TransliterateAsync(string, string, string)"/>
-    public async Task<YandexTransliterationResult> TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null)
+    /// <inheritdoc cref="TransliterateAsync(string, string, string, CancellationToken)"/>
+    public async Task<YandexTransliterationResult> TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -164,7 +166,7 @@ public sealed class YandexTranslator : ITranslator, IDisposable
         TranslatorGuards.LanguageSupported(this, toLanguage, fromLanguage);
 
         // It seems like the source language is required for transliterations
-        fromLanguage ??= await DetectLanguageAsync(text).ConfigureAwait(false);
+        fromLanguage ??= await DetectLanguageAsync(text, cancellationToken).ConfigureAwait(false);
 
         var data = new Dictionary<string, string>
         {
@@ -173,7 +175,7 @@ public sealed class YandexTranslator : ITranslator, IDisposable
         };
 
         using var content = new FormUrlEncodedContent(data);
-        using var response = await _httpClient.PostAsync(TransliterationApiUri, content).ConfigureAwait(false);
+        using var response = await _httpClient.PostAsync(TransliterationApiUri, content, cancellationToken).ConfigureAwait(false);
 
         if (response.StatusCode == HttpStatusCode.BadRequest)
         {
@@ -183,7 +185,7 @@ public sealed class YandexTranslator : ITranslator, IDisposable
 
         response.EnsureSuccessStatusCode();
 
-        string transliteration = (await response.Content.ReadFromJsonAsync(YandexTranslationResultModelContext.Default.String).ConfigureAwait(false))!;
+        string transliteration = (await response.Content.ReadFromJsonAsync(YandexTranslationResultModelContext.Default.String, cancellationToken).ConfigureAwait(false))!;
         var target = Language.GetLanguage(toLanguage.ISO6391);
         var source = Language.GetLanguage(fromLanguage.ISO6391);
 
@@ -194,11 +196,12 @@ public sealed class YandexTranslator : ITranslator, IDisposable
     /// Detects the language of a text using Yandex.Translate.
     /// </summary>
     /// <param name="text">The text to detect its language.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous language detection operation. The task contains the detected language.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> is null.</exception>
     /// <exception cref="TranslatorException">Thrown when an error occurred during the operation.</exception>
-    public async Task<Language> DetectLanguageAsync(string text)
+    public async Task<Language> DetectLanguageAsync(string text, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -215,9 +218,9 @@ public sealed class YandexTranslator : ITranslator, IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"{ApiUrl}/detect{query}"));
         request.Content = content;
 
-        using var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
-        var result = (await response.Content.ReadFromJsonAsync(YandexLanguageDetectionResultModelContext.Default.YandexLanguageDetectionResultModel).ConfigureAwait(false))!;
+        var result = (await response.Content.ReadFromJsonAsync(YandexLanguageDetectionResultModelContext.Default.YandexLanguageDetectionResultModel, cancellationToken).ConfigureAwait(false))!;
 
         if (!result.IsSuccessful)
         {
@@ -232,13 +235,32 @@ public sealed class YandexTranslator : ITranslator, IDisposable
     /// </summary>
     /// <param name="text">The text to convert.</param>
     /// <param name="language">The voice language. Only the languages in <see cref="TextToSpeechLanguages"/> are supported.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
+    /// <returns>A task that represents the asynchronous synthesis operation. The task contains the synthesized speech in a MP3 <see cref="Stream"/>.</returns>
+    public async Task<Stream> TextToSpeechAsync(string text, string language, CancellationToken cancellationToken)
+    {
+        return await TextToSpeechAsync(text, language, 1f, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc cref="TextToSpeechAsync(string, ILanguage, CancellationToken)"/>
+    public async Task<Stream> TextToSpeechAsync(string text, ILanguage language, CancellationToken cancellationToken)
+    {
+        return await TextToSpeechAsync(text, language, 1f, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Converts text into synthesized speech.
+    /// </summary>
+    /// <param name="text">The text to convert.</param>
+    /// <param name="language">The voice language. Only the languages in <see cref="TextToSpeechLanguages"/> are supported.</param>
     /// <param name="speed">The rate (speed) of synthesized speech.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous synthesis operation. The task contains the synthesized speech in a MP3 <see cref="Stream"/>.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> or <paramref name="language"/> are null.</exception>
     /// <exception cref="ArgumentException">Thrown when a <see cref="Language"/> could not be obtained from <paramref name="language"/>.</exception>
     /// <exception cref="TranslatorException">Thrown when <paramref name="language"/> is not supported.</exception>
-    public async Task<Stream> TextToSpeechAsync(string text, string language, float speed = 1)
+    public async Task<Stream> TextToSpeechAsync(string text, string language, float speed = 1, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -246,11 +268,11 @@ public sealed class YandexTranslator : ITranslator, IDisposable
         TranslatorGuards.LanguageFound(language, out var lang);
         EnsureValidTextToSpeechLanguage(lang);
 
-        return await TextToSpeechAsync(text, lang, speed).ConfigureAwait(false);
+        return await TextToSpeechAsync(text, lang, speed, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc cref="TextToSpeechAsync(string, string, float)"/>
-    public async Task<Stream> TextToSpeechAsync(string text, ILanguage language, float speed = 1)
+    /// <inheritdoc cref="TextToSpeechAsync(string, string, float, CancellationToken)"/>
+    public async Task<Stream> TextToSpeechAsync(string text, ILanguage language, float speed = 1, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -260,7 +282,7 @@ public sealed class YandexTranslator : ITranslator, IDisposable
         string url = $"https://tts.voicetech.yandex.net/tts?text={Uri.EscapeDataString(text)}&lang={YandexTextToSpeechHotPatch(language.ISO6391)}&speed={speed}&format=mp3&quality=hi&platform=android&application=translate";
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(url));
 
-        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
         return await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
@@ -289,24 +311,24 @@ public sealed class YandexTranslator : ITranslator, IDisposable
     /// <inheritdoc/>
     public void Dispose() => Dispose(true);
 
-    /// <inheritdoc cref="TranslateAsync(string, string, string)"/>
-    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, string toLanguage, string? fromLanguage)
-        => await TranslateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TranslateAsync(string, string, string, CancellationToken)"/>
+    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, string toLanguage, string? fromLanguage, CancellationToken cancellationToken)
+        => await TranslateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="TranslateAsync(string, ILanguage, ILanguage)"/>
-    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage)
-        => await TranslateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TranslateAsync(string, ILanguage, ILanguage, CancellationToken)"/>
+    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage, CancellationToken cancellationToken)
+        => await TranslateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="TransliterateAsync(string, string, string)"/>
-    async Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, string toLanguage, string? fromLanguage)
-        => await TransliterateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TransliterateAsync(string, string, string, CancellationToken)"/>
+    async Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, string toLanguage, string? fromLanguage, CancellationToken cancellationToken)
+        => await TransliterateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="TransliterateAsync(string, ILanguage, ILanguage)"/>
-    async Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage)
-        => await TransliterateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TransliterateAsync(string, ILanguage, ILanguage, CancellationToken)"/>
+    async Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage, CancellationToken cancellationToken)
+        => await TransliterateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="DetectLanguageAsync(string)"/>
-    async Task<ILanguage> ITranslator.DetectLanguageAsync(string text) => await DetectLanguageAsync(text).ConfigureAwait(false);
+    /// <inheritdoc cref="DetectLanguageAsync(string, CancellationToken)"/>
+    async Task<ILanguage> ITranslator.DetectLanguageAsync(string text, CancellationToken cancellationToken) => await DetectLanguageAsync(text, cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc cref="IsLanguageSupported(Language)"/>
     bool ITranslator.IsLanguageSupported(ILanguage language) => language is Language lang && IsLanguageSupported(lang);

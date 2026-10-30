@@ -224,7 +224,7 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
     /// <exception cref="TranslatorException">
     /// Thrown when <paramref name="toLanguage"/> or <paramref name="fromLanguage"/> are not supported, or an error occurred during the operation.
     /// </exception>
-    public async Task<MicrosoftTranslationResult> TranslateAsync(string text, string toLanguage, string? fromLanguage = null)
+    public async Task<MicrosoftTranslationResult> TranslateAsync(string text, string toLanguage, string? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -234,11 +234,11 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
         TranslatorGuards.LanguageSupported(this, toLang, fromLang);
         TranslatorGuards.MaxTextLength(text, MaxTextLength);
 
-        return await TranslateAsync(text, toLang, fromLang).ConfigureAwait(false);
+        return await TranslateAsync(text, toLang, fromLang, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc cref="TranslateAsync(string, string, string)"/>
-    public async Task<MicrosoftTranslationResult> TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null)
+    /// <inheritdoc cref="TranslateAsync(string, string, string, CancellationToken)"/>
+    public async Task<MicrosoftTranslationResult> TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage = null, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -256,10 +256,10 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
         request.Headers.Add("X-MT-Signature", GetSignature(url));
         request.Content = JsonContent.Create([new MicrosoftTranslatorRequest { Text = text }], MicrosoftTranslatorRequestContext.Default.MicrosoftTranslatorRequestArray);
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
-        var result = (await response.Content.ReadFromJsonAsync(MicrosoftTranslationResultModelContext.Default.MicrosoftTranslationResultModelArray).ConfigureAwait(false))![0];
+        var result = (await response.Content.ReadFromJsonAsync(MicrosoftTranslationResultModelContext.Default.MicrosoftTranslationResultModelArray, cancellationToken).ConfigureAwait(false))![0];
         var translation = result.Translations[0];
 
         string sourceLanguage = fromLanguage?.ISO6391 ?? result.DetectedLanguage?.Language ?? throw new TranslatorException("Expected detected language to be present on API response when fromLanguage is not provided.", Name);
@@ -397,11 +397,12 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
     /// Detects the language of a text using Microsoft Translator.
     /// </summary>
     /// <param name="text">The text to detect its language.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous language detection operation. The task contains the detected language.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> is null.</exception>
     /// <exception cref="TranslatorException">Thrown when an error occurred during the operation.</exception>
-    public async Task<Language> DetectLanguageAsync(string text)
+    public async Task<Language> DetectLanguageAsync(string text, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
@@ -411,10 +412,10 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
         request.Headers.Add("X-MT-Signature", GetSignature(DetectUrl));
         request.Content = JsonContent.Create([new MicrosoftTranslatorRequest { Text = text }], MicrosoftTranslatorRequestContext.Default.MicrosoftTranslatorRequestArray);
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
-        var result = (await response.Content.ReadFromJsonAsync(MicrosoftLanguageDetectionResultModelContext.Default.MicrosoftLanguageDetectionResultModelArray).ConfigureAwait(false))![0];
+        var result = (await response.Content.ReadFromJsonAsync(MicrosoftLanguageDetectionResultModelContext.Default.MicrosoftLanguageDetectionResultModelArray, cancellationToken).ConfigureAwait(false))![0];
         return Language.GetLanguage(result.Language);
     }
 
@@ -423,20 +424,39 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
     /// </summary>
     /// <param name="text">The text to convert.</param>
     /// <param name="language">The language of the voice. Only the languages in <see cref="DefaultVoices"/> are supported.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
+    /// <returns>A task that represents the asynchronous synthesis operation. The task contains the synthesized speech in a MP3 <see cref="Stream"/>.</returns>
+    public async Task<Stream> TextToSpeechAsync(string text, string language, CancellationToken cancellationToken)
+    {
+        return await TextToSpeechAsync(text, language, 1f, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc cref="TextToSpeechAsync(string, MicrosoftVoice, CancellationToken)"/>
+    public async Task<Stream> TextToSpeechAsync(string text, MicrosoftVoice voice, CancellationToken cancellationToken)
+    {
+        return await TextToSpeechAsync(text, voice, 1f, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Converts text into synthesized speech.
+    /// </summary>
+    /// <param name="text">The text to convert.</param>
+    /// <param name="language">The language of the voice. Only the languages in <see cref="DefaultVoices"/> are supported.</param>
     /// <param name="speakRate">The speaking rate of the text, expressed as a number that acts as a multiplier of the default.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous synthesis operation. The task contains the synthesized speech in a MP3 <see cref="Stream"/>.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> or <paramref name="language"/> are null.</exception>
     /// <exception cref="ArgumentException">Thrown when a <see cref="MicrosoftVoice"/> could not be obtained from <paramref name="language"/>.</exception>
     /// <exception cref="TranslatorException">Thrown when <paramref name="language"/> is not supported, or an error occurred during the operation.</exception>
-    public async Task<Stream> TextToSpeechAsync(string text, string language, float speakRate = 1)
+    public async Task<Stream> TextToSpeechAsync(string text, string language, float speakRate = 1, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(language);
         EnsureValidTextToSpeechLanguage(language, out var voice);
 
-        return await TextToSpeechAsync(text, voice, speakRate).ConfigureAwait(false);
+        return await TextToSpeechAsync(text, voice, speakRate, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -446,17 +466,18 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
     /// <param name="text">The text to convert.</param>
     /// <param name="voice">The voice.</param>
     /// <param name="speakRate">The speaking rate of the text, expressed as a number that acts as a multiplier of the default.</param>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous synthesis operation. The task contains the synthesized speech in a MP3 <see cref="Stream"/>.</returns>
     /// <exception cref="ObjectDisposedException">Thrown when this translator has been disposed.</exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> or <paramref name="voice"/> are null.</exception>
     /// <exception cref="TranslatorException">Thrown when an error occurred during the operation.</exception>
-    public async Task<Stream> TextToSpeechAsync(string text, MicrosoftVoice voice, float speakRate = 1)
+    public async Task<Stream> TextToSpeechAsync(string text, MicrosoftVoice voice, float speakRate = 1, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(voice);
 
-        var authInfo = await GetOrUpdateMicrosoftAuthTokenAsync().ConfigureAwait(false);
+        var authInfo = await GetOrUpdateMicrosoftAuthTokenAsync(cancellationToken).ConfigureAwait(false);
 
         string payload = $"<speak version='1.0' xml:lang='{voice.Locale}'><voice xml:lang='{voice.Locale}' xml:gender='{voice.Gender}' name='{voice.ShortName}'><prosody rate='{speakRate}'>{SsmlEncoder.Encode(text)}</prosody></voice></speak>";
 
@@ -465,7 +486,7 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authInfo.Token);
         request.Headers.Add("X-Microsoft-OutputFormat", "audio-16khz-32kbitrate-mono-mp3");
 
-        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
         return await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
@@ -523,9 +544,10 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
     /// This token can be used in the following services:<br/>
     /// - <see href="https://docs.microsoft.com/en-us/azure/cognitive-services/speech-service/">Speech Services</see>
     /// </remarks>
+    /// <param name="cancellationToken">A token used to cancel the request.</param>
     /// <returns>A task that represents the asynchronous operation. The task contains the token.</returns>
     /// <exception cref="TranslatorException">Thrown when the token could not be obtained from the response.</exception>
-    public async ValueTask<MicrosoftAuthTokenInfo> GetOrUpdateMicrosoftAuthTokenAsync()
+    public async ValueTask<MicrosoftAuthTokenInfo> GetOrUpdateMicrosoftAuthTokenAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -534,7 +556,7 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
             return _cachedAuthTokenInfo.Value;
         }
 
-        await _authTokenInfoSemaphore.WaitAsync().ConfigureAwait(false);
+        await _authTokenInfoSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -548,10 +570,10 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
             request.Headers.Add("X-MT-Signature", GetSignature(SpeechTokenUrl));
             request.Headers.Add("X-UserId", "0");
 
-            using var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
-            var model = (await response.Content.ReadFromJsonAsync(MicrosoftAuthTokenModelContext.Default.MicrosoftAuthTokenModel).ConfigureAwait(false))!;
+            var model = (await response.Content.ReadFromJsonAsync(MicrosoftAuthTokenModelContext.Default.MicrosoftAuthTokenModel, cancellationToken).ConfigureAwait(false))!;
 
             // Tokens are valid for 30 minutes. The exp. date might be closer
             // if another API request is made while the token is still valid.
@@ -597,13 +619,13 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
     /// <inheritdoc/>
     public void Dispose() => Dispose(true);
 
-    /// <inheritdoc cref="TranslateAsync(string, string, string)"/>
-    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, string toLanguage, string? fromLanguage)
-        => await TranslateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TranslateAsync(string, string, string, CancellationToken)"/>
+    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, string toLanguage, string? fromLanguage, CancellationToken cancellationToken)
+        => await TranslateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc cref="TranslateAsync(string, ILanguage, ILanguage)"/>
-    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage)
-        => await TranslateAsync(text, toLanguage, fromLanguage).ConfigureAwait(false);
+    /// <inheritdoc cref="TranslateAsync(string, ILanguage, ILanguage, CancellationToken)"/>
+    async Task<ITranslationResult> ITranslator.TranslateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage, CancellationToken cancellationToken)
+        => await TranslateAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
     async Task<IDictionaryResult> IDictionaryTranslator.LookupDictionaryAsync(string text, string toLanguage, string fromLanguage, CancellationToken cancellationToken)
         => await LookupDictionaryAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
@@ -611,14 +633,14 @@ public sealed class MicrosoftTranslator : IDictionaryTranslator, IDisposable
     async Task<IDictionaryResult> IDictionaryTranslator.LookupDictionaryAsync(string text, ILanguage toLanguage, ILanguage fromLanguage, CancellationToken cancellationToken)
         => await LookupDictionaryAsync(text, toLanguage, fromLanguage, cancellationToken).ConfigureAwait(false);
 
-    Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, string toLanguage, string? fromLanguage)
+    Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, string toLanguage, string? fromLanguage, CancellationToken cancellationToken)
         => throw new NotSupportedException("This translator does not support transliteration via languages.");
 
-    Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage)
+    Task<ITransliterationResult> ITranslator.TransliterateAsync(string text, ILanguage toLanguage, ILanguage? fromLanguage, CancellationToken cancellationToken)
         => throw new NotSupportedException("This translator does not support transliteration via languages.");
 
-    /// <inheritdoc cref="DetectLanguageAsync(string)"/>
-    async Task<ILanguage> ITranslator.DetectLanguageAsync(string text) => await DetectLanguageAsync(text).ConfigureAwait(false);
+    /// <inheritdoc cref="DetectLanguageAsync(string, CancellationToken)"/>
+    async Task<ILanguage> ITranslator.DetectLanguageAsync(string text, CancellationToken cancellationToken) => await DetectLanguageAsync(text, cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc cref="IsLanguageSupported(Language)"/>
     bool ITranslator.IsLanguageSupported(ILanguage language) => language is Language lang && IsLanguageSupported(lang);
